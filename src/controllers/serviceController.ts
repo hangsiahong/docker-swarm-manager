@@ -50,4 +50,41 @@ export class ServiceController {
       res.status(500).json({ message: error.message });
     }
   }
+
+  public async getService(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const service = await this.dockerService.getServiceAPI(id);
+      res.status(200).json(service);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  public async scaleService(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { replicas } = req.body;
+
+      if (typeof replicas !== "number") {
+        res.status(400).json({ error: "Replicas must be a number" });
+        return;
+      }
+
+      const service = await this.dockerService.scaleServiceAPI(id, replicas);
+      res.status(200).json({ message: "Service scaled successfully", service });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  public async getServiceLogs(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const logs = await this.dockerService.getServiceLogsAPI(id);
+      res.status(200).json({ logs });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
 }

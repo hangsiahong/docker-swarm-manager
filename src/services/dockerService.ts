@@ -9,7 +9,54 @@ export class DockerService {
 
   public async createServiceAPI(serviceConfig: any): Promise<any> {
     try {
-      const service = await this.docker.createService(serviceConfig);
+      const {
+        name,
+        image,
+        replicas = 1,
+        ports = [],
+        env = [],
+        labels = {},
+        networks = [],
+      } = serviceConfig;
+
+      if (!name || !image) {
+        throw new Error("Name and image are required");
+      }
+
+      const serviceSpec = {
+        Name: name,
+        TaskTemplate: {
+          ContainerSpec: {
+            Image: image,
+            Env: env,
+            Labels: labels,
+          },
+          Resources: {},
+          RestartPolicy: {
+            Condition: "on-failure",
+          },
+          Placement: {},
+        },
+        Mode: {
+          Replicated: {
+            Replicas: replicas,
+          },
+        },
+        EndpointSpec: {
+          Mode: "vip",
+          Ports: ports.map((port: any) => ({
+            Protocol: "tcp",
+            TargetPort: port.target,
+            PublishedPort: port.published,
+            PublishMode: "ingress",
+          })),
+        },
+        Networks: networks.map((network: any) => ({
+          Target: network,
+        })),
+      };
+
+      const service = await this.docker.createService(serviceSpec);
       return service;
     } catch (error: any) {
       throw new Error(`Failed to create service: ${error.message}`);
@@ -21,9 +68,12 @@ export class DockerService {
     updateConfig: any
   ): Promise<any> {
     try {
-      const service = await this.docker.getService(serviceId);
-      await service.update(updateConfig);
-      return service;
+      const service = this.docker.getService(serviceId);
+      const serviceInfo = await service.inspect();
+
+      const version = serviceInfo.Version.Index;
+      const result = await service.update({ version, ...updateConfig });
+      return result;
     } catch (error: any) {
       throw new Error(`Failed to update service: ${error.message}`);
     }
@@ -44,6 +94,51 @@ export class DockerService {
       await service.remove();
     } catch (error: any) {
       throw new Error(`Failed to delete service: ${error.message}`);
+    }
+  }
+
+  public async getServiceAPI(serviceId: string): Promise<any> {
+    try {
+      const service = this.docker.getService(serviceId);
+      return await service.inspect();
+    } catch (error: any) {
+      throw new Error(`Failed to get service: ${error.message}`);
+    }
+  }
+
+  public async scaleServiceAPI(
+    serviceId: string,
+    replicas: number
+  ): Promise<any> {
+    try {
+      const service = this.docker.getService(serviceId);
+      const serviceInfo = await service.inspect();
+
+      const updateSpec = {
+        version: serviceInfo.Version.Index,
+        Mode: {
+          Replicated: {
+            Replicas: replicas,
+          },
+        },
+      };
+
+      return await service.update(updateSpec);
+    } catch (error: any) {
+      throw new Error(`Failed to scale service: ${error.message}`);
+    }
+  }
+
+  public async getServiceLogsAPI(serviceId: string): Promise<any> {
+    try {
+      const service = this.docker.getService(serviceId);
+      return await service.logs({
+        stdout: true,
+        stderr: true,
+        timestamps: true,
+      });
+    } catch (error: any) {
+      throw new Error(`Failed to get service logs: ${error.message}`);
     }
   }
 }

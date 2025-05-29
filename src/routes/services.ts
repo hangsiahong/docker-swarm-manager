@@ -14,4 +14,13 @@ export const setServiceRoutes = (app: any) => {
     serviceController.deleteService.bind(serviceController)
   );
   router.get("/", serviceController.listServices.bind(serviceController));
+  router.get("/:id", serviceController.getService.bind(serviceController));
+  router.post(
+    "/:id/scale",
+    serviceController.scaleService.bind(serviceController)
+  );
+  router.get(
+    "/:id/logs",
+    serviceController.getServiceLogs.bind(serviceController)
+  );
 };
