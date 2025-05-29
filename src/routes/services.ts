@@ -35,4 +35,12 @@ export const setServiceRoutes = (app: any) => {
     "/:id/tasks",
     serviceController.getServiceTasks.bind(serviceController)
   );
+  router.get(
+    "/:id/replicas",
+    serviceController.getServiceReplicas.bind(serviceController)
+  );
+  router.post(
+    "/:id/bulk-logs",
+    serviceController.getBulkReplicaLogs.bind(serviceController)
+  );
 };

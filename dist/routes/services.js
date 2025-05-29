@@ -11,5 +11,11 @@ const setServiceRoutes = (app) => {
     router.put("/:id", serviceController.updateService.bind(serviceController));
     router.delete("/:id", serviceController.deleteService.bind(serviceController));
     router.get("/", serviceController.listServices.bind(serviceController));
+    router.get("/:id", serviceController.getService.bind(serviceController));
+    router.post("/:id/scale", serviceController.scaleService.bind(serviceController));
+    router.get("/:id/logs", serviceController.getServiceLogs.bind(serviceController));
+    router.put("/:id/environment", serviceController.updateServiceEnvironment.bind(serviceController));
+    router.post("/:id/rolling-update", serviceController.rollingUpdateService.bind(serviceController));
+    router.get("/:id/tasks", serviceController.getServiceTasks.bind(serviceController));
 };
 exports.setServiceRoutes = setServiceRoutes;

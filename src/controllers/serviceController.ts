@@ -81,8 +81,62 @@ export class ServiceController {
   public async getServiceLogs(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const logs = await this.dockerService.getServiceLogsAPI(id);
-      res.status(200).json({ logs });
+      const { taskId, replicaIndex, tail, since, follow, timestamps } =
+        req.query;
+
+      // Parse query parameters
+      const options: any = {};
+
+      if (taskId) options.taskId = taskId as string;
+      if (replicaIndex !== undefined) {
+        const index = parseInt(replicaIndex as string);
+        if (isNaN(index) || index < 0) {
+          res.status(400).json({
+            error: "replicaIndex must be a non-negative number",
+          });
+          return;
+        }
+        options.replicaIndex = index;
+      }
+      if (tail) {
+        const tailLines = parseInt(tail as string);
+        if (isNaN(tailLines) || tailLines < 1) {
+          res.status(400).json({
+            error: "tail must be a positive number",
+          });
+          return;
+        }
+        options.tail = tailLines;
+      }
+      if (since) options.since = since as string;
+      if (follow) options.follow = follow === "true";
+      if (timestamps !== undefined) options.timestamps = timestamps === "true";
+
+      // Get service info for context
+      const service = await this.dockerService.getServiceAPI(id);
+      const tasks = await this.dockerService.getServiceTasksAPI(id);
+      const runningReplicas = tasks.filter(
+        (task) => task.Status?.State === "running"
+      ).length;
+
+      const logs = await this.dockerService.getServiceLogsAPI(id, options);
+
+      res.status(200).json({
+        logs,
+        metadata: {
+          serviceId: id,
+          serviceName: service.Spec?.Name,
+          totalReplicas: service.Spec?.Mode?.Replicated?.Replicas || 0,
+          runningReplicas,
+          options: {
+            ...options,
+            note:
+              runningReplicas > 10 && !options.tail
+                ? "High replica count detected. Consider using 'tail' parameter for better performance."
+                : undefined,
+          },
+        },
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -146,6 +200,64 @@ export class ServiceController {
       const { id } = req.params;
       const tasks = await this.dockerService.getServiceTasksAPI(id);
       res.status(200).json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  /**
+   * Get replica information for a service
+   * GET /api/services/:id/replicas
+   */
+  public async getServiceReplicas(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const replicas = await this.dockerService.getServiceReplicasAPI(id);
+      res.status(200).json(replicas);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  /**
+   * Get logs from multiple replicas with performance optimizations
+   * POST /api/services/:id/bulk-logs
+   */
+  public async getBulkReplicaLogs(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { replicaIndexes, tail, since, timestamps, maxConcurrent } =
+        req.body;
+
+      // Validate replica indexes if provided
+      if (replicaIndexes && !Array.isArray(replicaIndexes)) {
+        res.status(400).json({
+          error: "replicaIndexes must be an array of numbers",
+        });
+        return;
+      }
+
+      if (replicaIndexes) {
+        for (const index of replicaIndexes) {
+          if (typeof index !== "number" || index < 0) {
+            res.status(400).json({
+              error: "All replica indexes must be non-negative numbers",
+            });
+            return;
+          }
+        }
+      }
+
+      const options: any = {};
+      if (replicaIndexes) options.replicaIndexes = replicaIndexes;
+      if (tail) options.tail = Math.min(parseInt(tail), 1000); // Max 1000 lines
+      if (since) options.since = since;
+      if (timestamps !== undefined) options.timestamps = timestamps;
+      if (maxConcurrent)
+        options.maxConcurrent = Math.min(parseInt(maxConcurrent), 10); // Max 10 concurrent
+
+      const logs = await this.dockerService.getBulkReplicaLogsAPI(id, options);
+      res.status(200).json(logs);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

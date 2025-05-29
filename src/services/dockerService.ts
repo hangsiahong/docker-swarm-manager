@@ -10,6 +10,24 @@ export class DockerService {
     this.networkService = new NetworkService();
   }
 
+  /**
+   * Returns standardized resource limits for all services
+   * Fixed at 1 CPU and 2GB RAM per container
+   * Users should scale by increasing replicas, not resources
+   */
+  private getStandardResourceLimits() {
+    return {
+      Limits: {
+        NanoCPUs: 1000000000, // 1.0 CPU (1 billion nanocpus)
+        MemoryBytes: 2147483648, // 2GB in bytes (2 * 1024 * 1024 * 1024)
+      },
+      Reservations: {
+        NanoCPUs: 250000000, // 0.25 CPU minimum (250 million nanocpus)
+        MemoryBytes: 536870912, // 512MB minimum (512 * 1024 * 1024)
+      },
+    };
+  }
+
   public async createServiceAPI(serviceConfig: any): Promise<any> {
     try {
       const {
@@ -69,7 +87,7 @@ export class DockerService {
             Env: env,
             Labels: labels,
           },
-          Resources: {},
+          Resources: this.getStandardResourceLimits(),
           RestartPolicy: {
             Condition: "on-failure",
           },
@@ -136,6 +154,8 @@ export class DockerService {
               },
             }),
           },
+          // Enforce fixed resource limits on updates
+          Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
         },
         Mode: currentSpec.Mode,
@@ -236,16 +256,111 @@ export class DockerService {
     }
   }
 
-  public async getServiceLogsAPI(serviceId: string): Promise<any> {
+  public async getServiceLogsAPI(
+    serviceId: string,
+    options?: {
+      taskId?: string;
+      replicaIndex?: number;
+      tail?: number;
+      since?: string;
+      follow?: boolean;
+      timestamps?: boolean;
+    }
+  ): Promise<any> {
     try {
       const service = this.docker.getService(serviceId);
-      return await service.logs({
+
+      // If specific task/replica is requested, get logs from that task only
+      if (options?.taskId || options?.replicaIndex !== undefined) {
+        return await this.getTaskSpecificLogs(serviceId, options);
+      }
+
+      // For high replica counts, limit output by default
+      const logOptions: any = {
         stdout: true,
         stderr: true,
-        timestamps: true,
-      });
+        timestamps: options?.timestamps !== false,
+        ...(options?.tail && { tail: Math.min(options.tail, 1000) }), // Max 1000 lines for safety
+        ...(options?.since && { since: options.since }),
+        ...(options?.follow && { follow: options.follow }),
+      };
+
+      // For services with many replicas, warn about potential performance impact
+      const tasks = await this.getServiceTasksAPI(serviceId);
+      if (tasks.length > 10 && !options?.tail) {
+        console.warn(
+          `Service ${serviceId} has ${tasks.length} replicas. Consider using 'tail' parameter for better performance.`
+        );
+      }
+
+      return await service.logs(logOptions);
     } catch (error: any) {
       throw new Error(`Failed to get service logs: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get logs from a specific task/replica
+   */
+  private async getTaskSpecificLogs(
+    serviceId: string,
+    options: {
+      taskId?: string;
+      replicaIndex?: number;
+      tail?: number;
+      since?: string;
+      follow?: boolean;
+      timestamps?: boolean;
+    }
+  ): Promise<any> {
+    try {
+      const tasks = await this.getServiceTasksAPI(serviceId);
+
+      let targetTask;
+      if (options.taskId) {
+        targetTask = tasks.find((task) => task.ID === options.taskId);
+        if (!targetTask) {
+          throw new Error(
+            `Task ${options.taskId} not found in service ${serviceId}`
+          );
+        }
+      } else if (options.replicaIndex !== undefined) {
+        // Sort tasks by creation time to get consistent replica indexing
+        const sortedTasks = tasks
+          .filter((task) => task.Status?.State === "running")
+          .sort(
+            (a, b) =>
+              new Date(a.CreatedAt).getTime() - new Date(b.CreatedAt).getTime()
+          );
+
+        if (options.replicaIndex >= sortedTasks.length) {
+          throw new Error(
+            `Replica index ${options.replicaIndex} not found. Service has ${sortedTasks.length} running replicas.`
+          );
+        }
+        targetTask = sortedTasks[options.replicaIndex];
+      }
+
+      if (!targetTask) {
+        throw new Error("No valid task found for the specified criteria");
+      }
+
+      // Get logs from the specific container
+      const container = this.docker.getContainer(
+        targetTask.Status.ContainerStatus.ContainerID
+      );
+      const logOptions: any = {
+        stdout: true,
+        stderr: true,
+        timestamps: options.timestamps !== false,
+        ...(options.tail && { tail: Math.min(options.tail, 1000) }),
+        ...(options.since && { since: options.since }),
+        ...(options.follow && { follow: options.follow }),
+      };
+
+      return await container.logs(logOptions);
+    } catch (error: any) {
+      throw new Error(`Failed to get task-specific logs: ${error.message}`);
     }
   }
 
@@ -267,6 +382,8 @@ export class DockerService {
             ...currentSpec.TaskTemplate.ContainerSpec,
             Env: envVars,
           },
+          // Enforce fixed resource limits
+          Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
         },
         Mode: currentSpec.Mode,
@@ -310,6 +427,8 @@ export class DockerService {
             ...currentSpec.TaskTemplate.ContainerSpec,
             Image: image,
           },
+          // Enforce fixed resource limits
+          Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
         },
         Mode: currentSpec.Mode,
@@ -343,6 +462,119 @@ export class DockerService {
       return tasks;
     } catch (error: any) {
       throw new Error(`Failed to get service tasks: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get detailed replica information for a service
+   */
+  public async getServiceReplicasAPI(serviceId: string): Promise<any> {
+    try {
+      const service = await this.getServiceAPI(serviceId);
+      const tasks = await this.getServiceTasksAPI(serviceId);
+
+      const replicas = tasks.map((task: any, index: number) => ({
+        index,
+        taskId: task.ID,
+        nodeId: task.NodeID,
+        status: task.Status?.State,
+        containerId: task.Status?.ContainerStatus?.ContainerID,
+        createdAt: task.CreatedAt,
+        updatedAt: task.UpdatedAt,
+        desired: task.DesiredState,
+        message: task.Status?.Message,
+        error: task.Status?.Err,
+      }));
+
+      return {
+        serviceId,
+        serviceName: service.Spec?.Name,
+        totalReplicas: service.Spec?.Mode?.Replicated?.Replicas || 0,
+        runningReplicas: replicas.filter((r: any) => r.status === "running")
+          .length,
+        replicas: replicas.sort((a: any, b: any) => a.index - b.index),
+      };
+    } catch (error: any) {
+      throw new Error(`Failed to get service replicas: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get logs from multiple replicas with pagination
+   */
+  public async getBulkReplicaLogsAPI(
+    serviceId: string,
+    options?: {
+      replicaIndexes?: number[];
+      tail?: number;
+      since?: string;
+      timestamps?: boolean;
+      maxConcurrent?: number;
+    }
+  ): Promise<any> {
+    try {
+      const replicaInfo = await this.getServiceReplicasAPI(serviceId);
+      const runningReplicas = replicaInfo.replicas.filter(
+        (r: any) => r.status === "running"
+      );
+
+      // Limit concurrent replica log requests to prevent overload
+      const maxConcurrent = options?.maxConcurrent || 5;
+      const targetIndexes =
+        options?.replicaIndexes ||
+        runningReplicas.slice(0, maxConcurrent).map((r: any) => r.index);
+
+      const logPromises = targetIndexes.map(async (replicaIndex: number) => {
+        try {
+          const logs = await this.getServiceLogsAPI(serviceId, {
+            replicaIndex,
+            tail: options?.tail || 100,
+            since: options?.since,
+            timestamps: options?.timestamps,
+          });
+
+          return {
+            replicaIndex,
+            taskId: runningReplicas.find((r: any) => r.index === replicaIndex)
+              ?.taskId,
+            logs,
+            status: "success",
+          };
+        } catch (error: any) {
+          return {
+            replicaIndex,
+            logs: null,
+            status: "error",
+            error: error.message,
+          };
+        }
+      });
+
+      // Execute requests with controlled concurrency
+      const results = [];
+      for (let i = 0; i < logPromises.length; i += maxConcurrent) {
+        const batch = logPromises.slice(i, i + maxConcurrent);
+        const batchResults = await Promise.all(batch);
+        results.push(...batchResults);
+      }
+
+      return {
+        serviceId,
+        serviceName: replicaInfo.serviceName,
+        totalReplicas: replicaInfo.totalReplicas,
+        requestedReplicas: targetIndexes.length,
+        results,
+        metadata: {
+          maxConcurrent,
+          tailLines: options?.tail || 100,
+          note:
+            replicaInfo.runningReplicas > 10
+              ? `Service has ${replicaInfo.runningReplicas} replicas. Bulk log requests are limited to ${maxConcurrent} concurrent replicas for performance.`
+              : undefined,
+        },
+      };
+    } catch (error: any) {
+      throw new Error(`Failed to get bulk replica logs: ${error.message}`);
     }
   }
 }
