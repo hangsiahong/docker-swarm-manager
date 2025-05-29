@@ -337,7 +337,20 @@ export class DockerService {
         );
       }
 
-      return await service.logs(logOptions);
+      const logsBuffer = await service.logs(logOptions);
+      
+      // Convert Buffer to string if it's a Buffer
+      let logsString: string;
+      if (Buffer.isBuffer(logsBuffer)) {
+        logsString = logsBuffer.toString('utf8');
+      } else if (typeof logsBuffer === 'string') {
+        logsString = logsBuffer;
+      } else {
+        // If it's a stream or other format, try to convert to string
+        logsString = String(logsBuffer);
+      }
+      
+      return logsString;
     } catch (error: any) {
       throw new Error(`Failed to get service logs: ${error.message}`);
     }
@@ -402,7 +415,20 @@ export class DockerService {
         ...(options.follow && { follow: options.follow }),
       };
 
-      return await container.logs(logOptions);
+      const logsBuffer = await container.logs(logOptions);
+      
+      // Convert Buffer to string if it's a Buffer
+      let logsString: string;
+      if (Buffer.isBuffer(logsBuffer)) {
+        logsString = logsBuffer.toString('utf8');
+      } else if (typeof logsBuffer === 'string') {
+        logsString = logsBuffer;
+      } else {
+        // If it's a stream or other format, try to convert to string
+        logsString = String(logsBuffer);
+      }
+      
+      return logsString;
     } catch (error: any) {
       throw new Error(`Failed to get task-specific logs: ${error.message}`);
     }

@@ -74,7 +74,15 @@ const ServiceDetail: React.FC = () => {
   );
 
   const rollingUpdateMutation = useMutation(
-    (image: string) => serviceApi.rollingUpdate(id!, { image }),
+    (image: string) => serviceApi.rollingUpdate(id!, { 
+      image,
+      updateConfig: {
+        parallelism: 1,
+        delay: "10s",
+        failureAction: "rollback",
+        order: "start-first"
+      }
+    }),
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['service', id]);
@@ -108,7 +116,16 @@ const ServiceDetail: React.FC = () => {
     setLogsLoading(true);
     try {
       const response = await serviceApi.getLogs(id!, { tail: 100, timestamps: true });
-      setLogs(response.logs);
+      console.log('Logs response:', response);
+      console.log('Logs type:', typeof response.logs);
+      console.log('Logs content:', response.logs);
+      
+      // Ensure logs is a string
+      const logsString = typeof response.logs === 'string' 
+        ? response.logs 
+        : JSON.stringify(response.logs);
+      
+      setLogs(logsString);
     } catch (error: any) {
       toast.error('Failed to fetch logs');
       setLogs('Failed to fetch logs');
