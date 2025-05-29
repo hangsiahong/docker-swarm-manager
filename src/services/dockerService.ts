@@ -132,12 +132,58 @@ export class DockerService {
     try {
       const service = this.docker.getService(serviceId);
       const serviceInfo = await service.inspect();
+      const currentSpec = serviceInfo.Spec;
 
-      const { image, replicas, env, labels, ports, networks, ...otherConfig } =
-        updateConfig;
+      const {
+        image,
+        replicas,
+        env,
+        labels,
+        ports,
+        networks,
+        networkIds,
+        networkOptions,
+        ...otherConfig
+      } = updateConfig;
+
+      // Handle network processing if networks are being updated
+      let processedNetworks = [];
+      if (networks || networkIds) {
+        // Process networkIds (create if not exists)
+        for (const networkId of networkIds || []) {
+          try {
+            const network = await this.networkService.createNetworkIfNotExists(
+              networkId,
+              networkOptions?.[networkId] || {}
+            );
+            processedNetworks.push({
+              Target: network.Id || network.ID,
+              Aliases: networkOptions?.[networkId]?.aliases || [],
+            });
+          } catch (error: any) {
+            throw new Error(
+              `Failed to handle network ${networkId}: ${error.message}`
+            );
+          }
+        }
+
+        // Process existing networks array (backward compatibility)
+        for (const network of networks || []) {
+          if (typeof network === "string") {
+            processedNetworks.push({ Target: network });
+          } else {
+            processedNetworks.push({
+              Target: network.Target || network.id,
+              ...(network.Aliases && { Aliases: network.Aliases }),
+            });
+          }
+        }
+      } else {
+        // Keep existing networks if no network changes specified
+        processedNetworks = currentSpec.TaskTemplate.Networks || [];
+      }
 
       // Build the update specification based on current service spec
-      const currentSpec = serviceInfo.Spec;
       const updateSpec: any = {
         Name: currentSpec.Name,
         Labels: labels || currentSpec.Labels,
@@ -157,6 +203,8 @@ export class DockerService {
           // Enforce fixed resource limits on updates
           Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+          // Always include networks in TaskTemplate to prevent migration issues
+          Networks: processedNetworks,
         },
         Mode: currentSpec.Mode,
         EndpointSpec: currentSpec.EndpointSpec,
@@ -185,14 +233,6 @@ export class DockerService {
             PublishMode: port.publishMode || "ingress",
           })),
         };
-      }
-
-      // Handle networks update
-      if (networks) {
-        updateSpec.TaskTemplate.Networks = networks.map((network: any) => ({
-          Target: typeof network === "string" ? network : network.Target,
-          ...(network.Aliases && { Aliases: network.Aliases }),
-        }));
       }
 
       const result = await service.update({
@@ -385,6 +425,8 @@ export class DockerService {
           // Enforce fixed resource limits
           Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+          // Preserve existing networks to prevent migration issues
+          Networks: currentSpec.TaskTemplate.Networks || [],
         },
         Mode: currentSpec.Mode,
         EndpointSpec: currentSpec.EndpointSpec,
@@ -430,6 +472,8 @@ export class DockerService {
           // Enforce fixed resource limits
           Resources: this.getStandardResourceLimits(),
           ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+          // Preserve existing networks to prevent migration issues
+          Networks: currentSpec.TaskTemplate.Networks || [],
         },
         Mode: currentSpec.Mode,
         EndpointSpec: currentSpec.EndpointSpec,
