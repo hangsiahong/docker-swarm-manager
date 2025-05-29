@@ -1,5 +1,7 @@
 export const API_BASE_URL =
-  process.env.NODE_ENV === "development" ? "http://localhost:3456/api" : "/api";
+  process.env.NODE_ENV === "development"
+    ? "http://192.168.1.101:3456/api"
+    : "/api";
 
 export const ENDPOINTS = {
   // Services

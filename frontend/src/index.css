@@ -14,7 +14,7 @@
   }
   
   .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+    @apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
   }
   
   .btn-secondary {
@@ -22,15 +22,15 @@
   }
   
   .btn-success {
-    @apply btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-500;
+    @apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
   }
   
   .btn-warning {
-    @apply btn bg-warning-600 text-white hover:bg-warning-700 focus:ring-warning-500;
+    @apply btn bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500;
   }
   
   .btn-error {
-    @apply btn bg-error-600 text-white hover:bg-error-700 focus:ring-error-500;
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
   }
   
   .btn-sm {
@@ -42,7 +42,7 @@
   }
   
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
   }
   
   .badge {
@@ -50,15 +50,15 @@
   }
   
   .badge-success {
-    @apply badge bg-success-100 text-success-800;
+    @apply badge bg-green-100 text-green-800;
   }
   
   .badge-warning {
-    @apply badge bg-warning-100 text-warning-800;
+    @apply badge bg-yellow-100 text-yellow-800;
   }
   
   .badge-error {
-    @apply badge bg-error-100 text-error-800;
+    @apply badge bg-red-100 text-red-800;
   }
   
   .badge-gray {

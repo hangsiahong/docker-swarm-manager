@@ -92,6 +92,8 @@ export class DockerService {
             Condition: "on-failure",
           },
           Placement: {},
+          // Add networks to TaskTemplate to be consistent with updates
+          ...(processedNetworks.length > 0 && { Networks: processedNetworks }),
         },
         Mode: {
           Replicated: {
@@ -111,11 +113,6 @@ export class DockerService {
             PublishMode: port.publishMode || "ingress",
           })),
         };
-      }
-
-      // Only add Networks if specified
-      if (processedNetworks.length > 0) {
-        serviceSpec.Networks = processedNetworks;
       }
 
       const service = await this.docker.createService(serviceSpec);
@@ -180,7 +177,9 @@ export class DockerService {
         }
       } else {
         // Keep existing networks if no network changes specified
-        processedNetworks = currentSpec.TaskTemplate.Networks || [];
+        // Handle both TaskTemplate.Networks and legacy service-level Networks
+        processedNetworks =
+          currentSpec.TaskTemplate.Networks || currentSpec.Networks || [];
       }
 
       // Build the update specification based on current service spec
@@ -210,6 +209,11 @@ export class DockerService {
         EndpointSpec: currentSpec.EndpointSpec,
         ...otherConfig,
       };
+
+      // Explicitly remove service-level Networks to force TaskTemplate-only networks
+      if (updateSpec.Networks) {
+        delete updateSpec.Networks;
+      }
 
       // Handle replicas update
       if (replicas !== undefined) {
