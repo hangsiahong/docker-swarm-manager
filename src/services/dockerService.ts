@@ -71,8 +71,71 @@ export class DockerService {
       const service = this.docker.getService(serviceId);
       const serviceInfo = await service.inspect();
 
-      const version = serviceInfo.Version.Index;
-      const result = await service.update({ version, ...updateConfig });
+      const { image, replicas, env, labels, ports, networks, ...otherConfig } =
+        updateConfig;
+
+      // Build the update specification based on current service spec
+      const currentSpec = serviceInfo.Spec;
+      const updateSpec: any = {
+        Name: currentSpec.Name,
+        Labels: labels || currentSpec.Labels,
+        TaskTemplate: {
+          ...currentSpec.TaskTemplate,
+          ContainerSpec: {
+            ...currentSpec.TaskTemplate.ContainerSpec,
+            ...(image && { Image: image }),
+            ...(env && { Env: env }),
+            ...(labels && {
+              Labels: {
+                ...currentSpec.TaskTemplate.ContainerSpec.Labels,
+                ...labels,
+              },
+            }),
+          },
+          ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+        },
+        Mode: currentSpec.Mode,
+        EndpointSpec: currentSpec.EndpointSpec,
+        ...otherConfig,
+      };
+
+      // Handle replicas update
+      if (replicas !== undefined) {
+        if (currentSpec.Mode.Replicated) {
+          updateSpec.Mode = {
+            Replicated: {
+              Replicas: replicas,
+            },
+          };
+        }
+      }
+
+      // Handle ports update
+      if (ports) {
+        updateSpec.EndpointSpec = {
+          ...currentSpec.EndpointSpec,
+          Ports: ports.map((port: any) => ({
+            Protocol: port.protocol || "tcp",
+            TargetPort: port.target,
+            PublishedPort: port.published,
+            PublishMode: port.publishMode || "ingress",
+          })),
+        };
+      }
+
+      // Handle networks update
+      if (networks) {
+        updateSpec.TaskTemplate.Networks = networks.map((network: any) => ({
+          Target: typeof network === "string" ? network : network.Target,
+          ...(network.Aliases && { Aliases: network.Aliases }),
+        }));
+      }
+
+      const result = await service.update({
+        version: serviceInfo.Version.Index,
+        ...updateSpec,
+      });
+
       return result;
     } catch (error: any) {
       throw new Error(`Failed to update service: ${error.message}`);
@@ -139,6 +202,103 @@ export class DockerService {
       });
     } catch (error: any) {
       throw new Error(`Failed to get service logs: ${error.message}`);
+    }
+  }
+
+  public async updateServiceEnvironmentAPI(
+    serviceId: string,
+    envVars: string[]
+  ): Promise<any> {
+    try {
+      const service = this.docker.getService(serviceId);
+      const serviceInfo = await service.inspect();
+
+      const currentSpec = serviceInfo.Spec;
+      const updateSpec = {
+        Name: currentSpec.Name,
+        Labels: currentSpec.Labels,
+        TaskTemplate: {
+          ...currentSpec.TaskTemplate,
+          ContainerSpec: {
+            ...currentSpec.TaskTemplate.ContainerSpec,
+            Env: envVars,
+          },
+          ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+        },
+        Mode: currentSpec.Mode,
+        EndpointSpec: currentSpec.EndpointSpec,
+      };
+
+      const result = await service.update({
+        version: serviceInfo.Version.Index,
+        ...updateSpec,
+      });
+
+      return result;
+    } catch (error: any) {
+      throw new Error(`Failed to update service environment: ${error.message}`);
+    }
+  }
+
+  public async rollingUpdateServiceAPI(
+    serviceId: string,
+    image: string,
+    updateConfig?: {
+      parallelism?: number;
+      delay?: string;
+      failureAction?: "pause" | "continue" | "rollback";
+      monitor?: string;
+      maxFailureRatio?: number;
+      order?: "stop-first" | "start-first";
+    }
+  ): Promise<any> {
+    try {
+      const service = this.docker.getService(serviceId);
+      const serviceInfo = await service.inspect();
+
+      const currentSpec = serviceInfo.Spec;
+      const updateSpec = {
+        Name: currentSpec.Name,
+        Labels: currentSpec.Labels,
+        TaskTemplate: {
+          ...currentSpec.TaskTemplate,
+          ContainerSpec: {
+            ...currentSpec.TaskTemplate.ContainerSpec,
+            Image: image,
+          },
+          ForceUpdate: (currentSpec.TaskTemplate.ForceUpdate || 0) + 1,
+        },
+        Mode: currentSpec.Mode,
+        EndpointSpec: currentSpec.EndpointSpec,
+        UpdateConfig: {
+          Parallelism: updateConfig?.parallelism || 1,
+          Delay: updateConfig?.delay || "10s",
+          FailureAction: updateConfig?.failureAction || "rollback",
+          Monitor: updateConfig?.monitor || "5s",
+          MaxFailureRatio: updateConfig?.maxFailureRatio || 0,
+          Order: updateConfig?.order || "start-first",
+        },
+      };
+
+      const result = await service.update({
+        version: serviceInfo.Version.Index,
+        ...updateSpec,
+      });
+
+      return result;
+    } catch (error: any) {
+      throw new Error(`Failed to perform rolling update: ${error.message}`);
+    }
+  }
+
+  public async getServiceTasksAPI(serviceId: string): Promise<any[]> {
+    try {
+      const tasks = await this.docker.listTasks({
+        filters: { service: [serviceId] },
+      });
+      return tasks;
+    } catch (error: any) {
+      throw new Error(`Failed to get service tasks: ${error.message}`);
     }
   }
 }

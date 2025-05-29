@@ -23,4 +23,16 @@ export const setServiceRoutes = (app: any) => {
     "/:id/logs",
     serviceController.getServiceLogs.bind(serviceController)
   );
+  router.put(
+    "/:id/environment",
+    serviceController.updateServiceEnvironment.bind(serviceController)
+  );
+  router.post(
+    "/:id/rolling-update",
+    serviceController.rollingUpdateService.bind(serviceController)
+  );
+  router.get(
+    "/:id/tasks",
+    serviceController.getServiceTasks.bind(serviceController)
+  );
 };

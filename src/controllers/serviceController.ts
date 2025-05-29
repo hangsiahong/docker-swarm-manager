@@ -87,4 +87,67 @@ export class ServiceController {
       res.status(500).json({ message: error.message });
     }
   }
+
+  public async updateServiceEnvironment(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { env } = req.body;
+
+      if (!Array.isArray(env)) {
+        res
+          .status(400)
+          .json({ error: "Environment variables must be an array" });
+        return;
+      }
+
+      const service = await this.dockerService.updateServiceEnvironmentAPI(
+        id,
+        env
+      );
+      res
+        .status(200)
+        .json({ message: "Service environment updated successfully", service });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  public async rollingUpdateService(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { image, updateConfig } = req.body;
+
+      if (!image) {
+        res.status(400).json({ error: "Image is required for rolling update" });
+        return;
+      }
+
+      const service = await this.dockerService.rollingUpdateServiceAPI(
+        id,
+        image,
+        updateConfig
+      );
+      res
+        .status(200)
+        .json({ message: "Rolling update initiated successfully", service });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+
+  public async getServiceTasks(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const tasks = await this.dockerService.getServiceTasksAPI(id);
+      res.status(200).json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  }
 }
