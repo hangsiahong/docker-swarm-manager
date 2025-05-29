@@ -1,10 +1,13 @@
 import Docker from "dockerode";
+import { NetworkService } from "./networkService";
 
 export class DockerService {
   private docker: Docker;
+  private networkService: NetworkService;
 
   constructor() {
     this.docker = new Docker();
+    this.networkService = new NetworkService();
   }
 
   public async createServiceAPI(serviceConfig: any): Promise<any> {
@@ -17,13 +20,48 @@ export class DockerService {
         env = [],
         labels = {},
         networks = [],
+        networkIds = [], // New: Array of network IDs/names
+        networkOptions = {}, // New: Network creation options
       } = serviceConfig;
 
       if (!name || !image) {
         throw new Error("Name and image are required");
       }
 
-      const serviceSpec = {
+      // Handle network creation/validation
+      const processedNetworks = [];
+
+      // Process networkIds (create if not exists)
+      for (const networkId of networkIds) {
+        try {
+          const network = await this.networkService.createNetworkIfNotExists(
+            networkId,
+            networkOptions[networkId] || {}
+          );
+          processedNetworks.push({
+            Target: network.Id || network.ID,
+            Aliases: networkOptions[networkId]?.aliases || [],
+          });
+        } catch (error: any) {
+          throw new Error(
+            `Failed to handle network ${networkId}: ${error.message}`
+          );
+        }
+      }
+
+      // Process existing networks array (backward compatibility)
+      for (const network of networks) {
+        if (typeof network === "string") {
+          processedNetworks.push({ Target: network });
+        } else {
+          processedNetworks.push({
+            Target: network.Target || network.id,
+            ...(network.Aliases && { Aliases: network.Aliases }),
+          });
+        }
+      }
+
+      const serviceSpec: any = {
         Name: name,
         TaskTemplate: {
           ContainerSpec: {
@@ -42,19 +80,25 @@ export class DockerService {
             Replicas: replicas,
           },
         },
-        EndpointSpec: {
+      };
+
+      // Only add EndpointSpec if ports are specified
+      if (ports.length > 0) {
+        serviceSpec.EndpointSpec = {
           Mode: "vip",
           Ports: ports.map((port: any) => ({
-            Protocol: "tcp",
+            Protocol: port.protocol || "tcp",
             TargetPort: port.target,
             PublishedPort: port.published,
-            PublishMode: "ingress",
+            PublishMode: port.publishMode || "ingress",
           })),
-        },
-        Networks: networks.map((network: any) => ({
-          Target: network,
-        })),
-      };
+        };
+      }
+
+      // Only add Networks if specified
+      if (processedNetworks.length > 0) {
+        serviceSpec.Networks = processedNetworks;
+      }
 
       const service = await this.docker.createService(serviceSpec);
       return service;

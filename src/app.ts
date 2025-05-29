@@ -2,6 +2,7 @@ import express from "express";
 import { json } from "body-parser";
 import { setServiceRoutes } from "./routes/services";
 import { setStackRoutes } from "./routes/stacks";
+import { setNetworkRoutes } from "./routes/networks";
 // import { setSwarmRoutes } from "./routes/swarm";
 import logger from "./utils/logger";
 import config from "./utils/config";
@@ -19,6 +20,7 @@ app.use((req, res, next) => {
 // Routes
 setServiceRoutes(app);
 setStackRoutes(app);
+setNetworkRoutes(app);
 // setSwarmRoutes(app);
 
 // Start the server
