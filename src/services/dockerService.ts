@@ -509,9 +509,9 @@ export class DockerService {
         EndpointSpec: currentSpec.EndpointSpec,
         UpdateConfig: {
           Parallelism: updateConfig?.parallelism || 1,
-          Delay: updateConfig?.delay || "10s",
+          Delay: this.parseDurationToNanoseconds(updateConfig?.delay || "10s"),
           FailureAction: updateConfig?.failureAction || "rollback",
-          Monitor: updateConfig?.monitor || "5s",
+          Monitor: this.parseDurationToNanoseconds(updateConfig?.monitor || "5s"),
           MaxFailureRatio: updateConfig?.maxFailureRatio || 0,
           Order: updateConfig?.order || "start-first",
         },
@@ -649,6 +649,33 @@ export class DockerService {
       };
     } catch (error: any) {
       throw new Error(`Failed to get bulk replica logs: ${error.message}`);
+    }
+  }
+
+  /**
+   * Convert duration string to nanoseconds for Docker API
+   * Supports: s (seconds), m (minutes), h (hours)
+   * Examples: "10s" -> 10000000000, "1m" -> 60000000000
+   */
+  private parseDurationToNanoseconds(duration: string): number {
+    const match = duration.match(/^(\d+)([smh])$/);
+    if (!match) {
+      // Default to 10 seconds if invalid format
+      return 10000000000;
+    }
+    
+    const value = parseInt(match[1]);
+    const unit = match[2];
+    
+    switch (unit) {
+      case 's':
+        return value * 1000000000; // seconds to nanoseconds
+      case 'm':
+        return value * 60 * 1000000000; // minutes to nanoseconds
+      case 'h':
+        return value * 60 * 60 * 1000000000; // hours to nanoseconds
+      default:
+        return 10000000000; // default 10 seconds
     }
   }
 }
