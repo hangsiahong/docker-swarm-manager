@@ -1,0 +1,20 @@
+{
+  "api": {
+    "baseUrl": "http://localhost:3000/api",
+    "servicesEndpoint": "/services",
+    "stacksEndpoint": "/stacks",
+    "swarmEndpoint": "/swarm"
+  },
+  "logging": {
+    "level": "info",
+    "file": "logs/app.log"
+  },
+  "docker": {
+    "host": "unix:///var/run/docker.sock",
+    "timeout": 5000
+  },
+  "security": {
+    "jwtSecret": "your_jwt_secret",
+    "tokenExpiration": "1h"
+  }
+}
